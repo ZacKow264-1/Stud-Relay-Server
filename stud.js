@@ -149,3 +149,21 @@ function buildServerPacket(type, clientId, payload = null) {
 
     return buffer;
 }
+
+function shutdown() {
+    console.log("Server shutting down...");
+    for (const socket of clients.keys()) {
+        socket.destroy();
+    }
+    server.close(() => {
+        console.log("Server closed.");
+        process.exit(0);
+    });
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    shutdown();
+});
