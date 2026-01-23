@@ -57,7 +57,7 @@ const server = net.createServer(socket => {
 
     socket.on("close", () => disconnectClient(socket));
     socket.on("error", err => {
-        console.error(`Client ${client.id} socket error:`, err);
+        console.error(`Client socket error:`, err);
         disconnectClient(socket)
     });
 });
