@@ -1,0 +1,19 @@
+{
+  "name": "stud",
+  "version": "1.0.0",
+  "description": "A relay server",
+  "main": "stud.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZacKow264-1/Brickathon-Relay-Server.git"
+  },
+  "author": "Zachary Kowalczyk",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ZacKow264-1/Brickathon-Relay-Server/issues"
+  },
+  "homepage": "https://github.com/ZacKow264-1/Brickathon-Relay-Server#readme"
+}
