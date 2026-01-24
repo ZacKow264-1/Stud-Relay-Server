@@ -10,6 +10,7 @@ const HEARTBEAT_TIMEOUT = 15000;
 const HEARTBEAT_CHECK_INTERVAL = 5000;
 
 //Packet types
+const TYPE_CONFIRM_CONNECTED    = 0;
 const TYPE_CLIENT_CONNECTED     = 1;
 const TYPE_CLIENT_DISCONNECTED  = 2;
 const TYPE_CLIENT_DATA          = 3;
@@ -44,6 +45,7 @@ const server = net.createServer(socket => {
 
     console.log(`Client ${clientId} connected`);
 
+    socket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, clientId));
     broadcast(buildServerPacket(TYPE_CLIENT_CONNECTED, clientId));
 
     socket.on("data", chunk => {
