@@ -114,9 +114,11 @@ function disconnectClient(socket) {
     if (client == null) return;
 
     console.log(`Client ${client.id} disconnected`);
-    clients.delete(socket);
 
     broadcast(buildServerPacket(TYPE_CLIENT_DISCONNECTED, client.id));
+
+    clients.delete(socket);
+    socket.destroy();
 }
 
 function broadcast(buffer) {
@@ -129,18 +131,20 @@ function broadcast(buffer) {
 
 function buildServerPacket(type, clientId, payload = null) {
     const payloadLength = (payload == null) ? 0 : payload.length;
-    const totalLength = MAGIC.length + 2 + 1 + 2 + payloadLength;
+    const totalLength = MAGIC.length + 2 + 1 + 2 + 1 + payloadLength;
 
     const buffer = Buffer.alloc(totalLength);
     let offset = 0;
 
     buffer.write(MAGIC, offset);
     offset += MAGIC.length;
-    buffer.writeUInt16BE(1 + 2 + payloadLength, offset);
+    buffer.writeUInt8(0, offset); //Null terminating character for MAGIC string
+    offset += 1;
+    buffer.writeUInt16LE(1 + 2 + payloadLength, offset);
     offset += 2;
     buffer.writeUInt8(type, offset);
     offset += 1;
-    buffer.writeUInt16BE(clientId, offset);
+    buffer.writeUInt16LE(clientId, offset);
     offset += 2;
 
     if (payload != null) {
@@ -153,7 +157,7 @@ function buildServerPacket(type, clientId, payload = null) {
 function shutdown() {
     console.log("Server shutting down...");
     for (const socket of clients.keys()) {
-        socket.destroy();
+        disconnectClient(socket);
     }
     server.close(() => {
         console.log("Server closed.");
