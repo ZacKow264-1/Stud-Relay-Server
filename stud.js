@@ -83,16 +83,19 @@ function processIncomingPackets(socket, client) {
 
     while (true) {
         if (buffer.length < MAGIC_LEN + 2) break; //Check if buffer is long enough to include MAGIC and LENGTH
-
-        if (buffer.slice(0, MAGIC_LEN).toString("utf8") !== MAGIC) { //Check MAGIC
+        
+        const receivedMagic = buffer.slice(0, MAGIC_LEN).toString("utf8");
+        if (receivedMagic !== MAGIC) { //Check MAGIC
+            console.log(`MAGIC invalid: ${receivedMagic}`);
             disconnectClient(socket);
             return;
         }
 
-        const payloadLength = buffer.readUInt16BE(MAGIC_LEN);
+        const payloadLength = buffer.readUInt16LE(MAGIC_LEN);
         const totalLength = MAGIC_LEN + 2 + payloadLength;
 
         if (payloadLength > MAX_PACKET_SIZE) { //Check if packet is too large
+            console.log(`Packet too large: ${payloadLength}`);
             disconnectClient(socket);
             return;
         }
