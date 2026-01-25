@@ -10,8 +10,7 @@ const HEARTBEAT_TIMEOUT = 15000;
 const HEARTBEAT_CHECK_INTERVAL = 5000;
 
 //Packet types
-const TYPE_CONFIRM_CONNECTED    = 0;
-const TYPE_CLIENT_CONNECTED     = 1;
+const TYPE_CONFIRM_CONNECTED    = 1;
 const TYPE_CLIENT_DISCONNECTED  = 2;
 const TYPE_CLIENT_DATA          = 3;
 const TYPE_SERVER_FULL          = 4;
@@ -23,7 +22,7 @@ const TYPE_SERVER_FULL          = 4;
 */
 
 /*Outgoing data format:
-    MAGIC (5 bytes, "BRlCK")
+    MAGIC (6 bytes, "BRlCK" plus null terminating character)
     LENGTH (uint16, expected length of payload)
     TYPE (uint8, type of packet)
     CLIENT_ID (uint16, ID of client from which packet originates)
@@ -34,19 +33,13 @@ let nextClientId = 1;
 const clients = new Map(); // Socket -> {id, buffer}
 
 const server = net.createServer(socket => {
-    if (clients.size >= MAX_CLIENTS) {
+    if (authenticatedClientCount() >= MAX_CLIENTS) {
         socket.write(buildServerPacket(TYPE_SERVER_FULL, 0));
         socket.end();
         return;
     }
 
-    const clientId = nextClientId++;
-    clients.set(socket, { id : clientId, buffer : Buffer.alloc(0), lastSeen : Date.now() });
-
-    console.log(`Client ${clientId} connected`);
-
-    socket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, clientId));
-    broadcast(buildServerPacket(TYPE_CLIENT_CONNECTED, clientId));
+    clients.set(socket, { id : null, buffer : Buffer.alloc(0), lastSeen : Date.now(), auth : false });
 
     socket.on("data", chunk => {
         const client = clients.get(socket);
@@ -72,7 +65,7 @@ setInterval(() => {
     const now = Date.now();
     for (const [socket, client] of clients.entries()) {
         if (now - client.lastSeen > HEARTBEAT_TIMEOUT) {
-            console.log(`Client ${client.id} timed out`);
+            console.log(client.auth ? `Client ${client.id} timed out` : `Unauthenticated socket timed out`);
             disconnectClient(socket);
         }
     }
@@ -86,8 +79,13 @@ function processIncomingPackets(socket, client) {
         
         const receivedMagic = buffer.slice(0, MAGIC_LEN).toString("utf8");
         if (receivedMagic !== MAGIC) { //Check MAGIC
-            console.log(`MAGIC invalid: ${receivedMagic}`);
-            disconnectClient(socket);
+            if (!client.auth) {
+                clients.delete(socket);
+                socket.destroy();
+            } else {
+                console.log(`MAGIC invalid: ${receivedMagic}`);
+                disconnectClient(socket);
+            }
             return;
         }
 
@@ -95,9 +93,24 @@ function processIncomingPackets(socket, client) {
         const totalLength = MAGIC_LEN + 2 + payloadLength;
 
         if (payloadLength > MAX_PACKET_SIZE) { //Check if packet is too large
-            console.log(`Packet too large: ${payloadLength}`);
-            disconnectClient(socket);
+            if (!client.auth) {
+                clients.delete(socket);
+                socket.destroy();
+            } else {
+                console.log(`Packet too large: ${payloadLength}`);
+                disconnectClient(socket);
+            }
             return;
+        }
+
+        //If packet has reached this point, it's valid
+        if (!client.auth) {
+            client.id = nextClientId++;
+            client.auth = true;
+
+            console.log(`Client ${client.id} connected and authenticated`);
+
+            socket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, client.id));
         }
 
         client.lastSeen = Date.now();
@@ -118,17 +131,18 @@ function disconnectClient(socket) {
     const client = clients.get(socket);
     if (client == null) return;
 
-    console.log(`Client ${client.id} disconnected`);
-
-    broadcast(buildServerPacket(TYPE_CLIENT_DISCONNECTED, client.id));
-
     clients.delete(socket);
     socket.destroy();
+
+    if (client.auth) {
+        console.log(`Client ${client.id} disconnected`);
+        broadcast(buildServerPacket(TYPE_CLIENT_DISCONNECTED, client.id));
+    }
 }
 
 function broadcast(buffer) {
-    for (const socket of clients.keys()) {
-        if (!socket.destroyed) {
+    for (const [socket, client] of clients.entries()) {
+        if (client.auth && !socket.destroyed) {
             socket.write(buffer);
         }
     }
@@ -157,6 +171,14 @@ function buildServerPacket(type, clientId, payload = null) {
     }
 
     return buffer;
+}
+
+function authenticatedClientCount() {
+    let count = 0;
+    for (const client of clients.values()) {
+        if (client.auth) count++;
+    }
+    return count;
 }
 
 function shutdown() {
