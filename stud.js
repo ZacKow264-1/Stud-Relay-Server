@@ -143,7 +143,7 @@ function processIncomingPackets(socket, client) {
 
         if (payloadLength > 0) forwardPacket(buildServerPacket(TYPE_CLIENT_DATA, client.id, payload), addressee);
 
-        buffer = buffer.slice(totalLength);
+        buffer = buffer.slice(totalLength + 1);
 
         client.lastSeen = Date.now();
     }
@@ -155,13 +155,12 @@ function disconnectClient(socket) {
     const client = clients.get(socket);
     if (client == null) return;
 
-    clients.delete(socket);
-    socket.destroy();
-
     if (client.auth) {
         console.log(`Client ${client.id} disconnected`);
         forwardPacket(buildServerPacket(TYPE_CLIENT_DISCONNECTED, client.id), 0);
     }
+
+    clients.delete(socket);
 
     //Assign new host if disconnected
     if (socket === hostSocket) {
@@ -180,6 +179,8 @@ function disconnectClient(socket) {
             hostSocket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, newHost.client.id, Buffer.from([1])));
         }
     }
+
+    socket.destroy();
 }
 
 function forwardPacket(buffer, addressee) {
@@ -220,7 +221,7 @@ function buildServerPacket(type, clientId, payload = null) {
     offset += MAGIC.length;
     buffer.writeUInt8(0, offset); //Null terminating character for MAGIC string
     offset += 1;
-    buffer.writeUInt16LE(1 + 2 + payloadLength, offset);
+    buffer.writeUInt16LE(payloadLength, offset);
     offset += 2;
     buffer.writeUInt8(type, offset);
     offset += 1;
