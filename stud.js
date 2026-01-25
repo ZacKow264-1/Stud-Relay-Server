@@ -10,6 +10,8 @@ const MAX_CLIENTS = 10;
 const HEARTBEAT_TIMEOUT = 15000;
 const HEARTBEAT_CHECK_INTERVAL = 5000;
 let hostSocket = null;
+let nextClientId = 2;
+const clients = new Map(); // Socket -> {id, buffer}
 
 //Packet types
 const TYPE_CONFIRM_CONNECTED    = 1;
@@ -31,9 +33,6 @@ const TYPE_SERVER_FULL          = 4;
     CLIENT_ID (uint16, ID of client from which packet originates)
     PAYLOAD (variable, optional)
 */
-
-let nextClientId = 2;
-const clients = new Map(); // Socket -> {id, buffer}
 
 const server = net.createServer(socket => {
     if (authenticatedClientCount() >= MAX_CLIENTS) {
@@ -80,6 +79,15 @@ setInterval(() => {
         }
     }
 }, HEARTBEAT_CHECK_INTERVAL);
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    shutdown();
+});
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~HELPERS~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 function processIncomingPackets(socket, client) {
     let buffer = client.buffer;
@@ -244,10 +252,3 @@ function shutdown() {
         process.exit(0);
     });
 }
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-process.on("uncaughtException", (err) => {
-    console.error("Uncaught exception:", err);
-    shutdown();
-});
