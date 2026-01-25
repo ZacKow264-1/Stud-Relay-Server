@@ -143,7 +143,7 @@ function processIncomingPackets(socket, client) {
 
         if (payloadLength > 0) forwardPacket(buildServerPacket(TYPE_CLIENT_DATA, client.id, payload), addressee);
 
-        buffer = buffer.slice(totalLength + 1);
+        buffer = buffer.slice(totalLength);
 
         client.lastSeen = Date.now();
     }
