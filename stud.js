@@ -195,7 +195,7 @@ function forwardPacket(buffer, addressee) {
     }
 
     if (addressee === 1) {
-        if (hostSocket != null && ws.readyState === WebSocket.OPEN) {
+        if (hostSocket != null && hostSocket.readyState === WebSocket.OPEN) {
             hostSocket.send(buffer);
         }
         return;
@@ -249,7 +249,7 @@ function shutdown() {
     for (const ws of clients.keys()) {
         disconnectClient(ws);
     }
-    server.close(() => {
+    httpServer.close(() => {
         console.log("Server closed.");
         process.exit(0);
     });
