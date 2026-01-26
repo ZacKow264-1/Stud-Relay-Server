@@ -1,4 +1,5 @@
-const http = require("http");
+const fs = require("fs");
+const https = require("https");
 const WebSocket = require("ws");
 
 //Config
@@ -35,14 +36,19 @@ const TYPE_SERVER_FULL          = 4;
     PAYLOAD (variable, optional)
 */
 
-const httpServer = http.createServer((req, res) => {
+const httpsServer = https.createServer(
+    {
+        key: fs.readFileSync("./key.pem"),
+        cert: fs.readFileSync("./cert.pem")
+    }, 
+    (req, res) => {
     res.writeHead(200);
     res.end();
 });
 
-const wss = new WebSocket.Server({ server : httpServer });
+const wss = new WebSocket.Server({ server : httpsServer });
 
-httpServer.listen(PORT, () => {
+httpsServer.listen(PORT, () => {
     console.log(`WebSocket relay listening on port ${PORT}`);
 });
 
@@ -249,7 +255,7 @@ function shutdown() {
     for (const ws of clients.keys()) {
         disconnectClient(ws);
     }
-    httpServer.close(() => {
+    httpsServer.close(() => {
         console.log("Server closed.");
         process.exit(0);
     });
