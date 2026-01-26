@@ -1,7 +1,8 @@
-const net = require("net");
+const http = require("http");
+const WebSocket = require("ws");
 
 //Config
-const PORT = process.env.PORT || 6510;
+const PORT = process.env.PORT || 10000;
 const MAGIC = "BRlCK";
 const MAGIC_LEN = MAGIC.length;
 const MAX_PACKET_SIZE = 1024;
@@ -34,48 +35,61 @@ const TYPE_SERVER_FULL          = 4;
     PAYLOAD (variable, optional)
 */
 
-const server = net.createServer(socket => {
+const httpServer = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end();
+});
+
+const wss = new WebSocket.Server({ server : httpServer });
+
+httpServer.listen(PORT, () => {
+    console.log(`WebSocket relay listening on port ${PORT}`);
+});
+
+wss.on("connection", ws => {
+
     if (authenticatedClientCount() >= MAX_CLIENTS) {
-        socket.write(buildServerPacket(TYPE_SERVER_FULL, 0));
-        socket.end();
+        ws.send(buildServerPacket(TYPE_SERVER_FULL, 0));
+        ws.close();
         return;
     }
 
-    clients.set(socket, { id : null, buffer : Buffer.alloc(0), lastSeen : Date.now(), auth : false });
+    clients.set(ws, {
+        id: null,
+        buffer: Buffer.alloc(0),
+        lastSeen: Date.now(),
+        auth: false
+    });
 
-    socket.on("data", chunk => {
-        const client = clients.get(socket);
+    ws.on("message", data => {
+        const client = clients.get(ws);
         if (client == null) return;
 
+        const chunk = Buffer.from(data);
+
         if (!client.auth && client.buffer.length + chunk.length > MAX_UNAUTH_BUFFER) {
-            console.log(`Unauthenticated client sent too much data, disconnecting`);
-            clients.delete(socket);
-            socket.destroy();
+            console.log("Unauthenticated client sent too much data, disconnecting");
+            disconnectClient(ws);
             return;
         }
 
         client.buffer = Buffer.concat([client.buffer, chunk]);
-
-        processIncomingPackets(socket, client);
+        processIncomingPackets(ws, client);
     });
 
-    socket.on("close", () => disconnectClient(socket));
-    socket.on("error", err => {
-        console.error(`Client socket error:`, err);
-        disconnectClient(socket)
+    ws.on("close", () => disconnectClient(ws));
+    ws.on("error", err => {
+        console.error(`Client socket error: `, err);
+        disconnectClient(ws);
     });
-});
-
-server.listen(PORT, () => {
-    console.log(`Relay server listening on port ${PORT}`);
 });
 
 setInterval(() => {
     const now = Date.now();
-    for (const [socket, client] of clients.entries()) {
+    for (const [ws, client] of clients.entries()) {
         if (now - client.lastSeen > HEARTBEAT_TIMEOUT) {
             console.log(client.auth ? `Client ${client.id} timed out` : `Unauthenticated socket timed out`);
-            disconnectClient(socket);
+            disconnectClient(ws);
         }
     }
 }, HEARTBEAT_CHECK_INTERVAL);
@@ -89,7 +103,7 @@ process.on("uncaughtException", (err) => {
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~HELPERS~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-function processIncomingPackets(socket, client) {
+function processIncomingPackets(ws, client) {
     let buffer = client.buffer;
 
     while (true) {
@@ -101,24 +115,12 @@ function processIncomingPackets(socket, client) {
         const totalLength = MAGIC_LEN + 2 + 2 + payloadLength;
 
         if (receivedMagic !== MAGIC) { //Check MAGIC
-            if (!client.auth) {
-                clients.delete(socket);
-                socket.destroy();
-            } else {
-                console.log(`MAGIC invalid: ${receivedMagic}`);
-                disconnectClient(socket);
-            }
+            disconnectClient(socket);
             return;
         }
 
         if (payloadLength > MAX_PACKET_SIZE) { //Check if packet is too large
-            if (!client.auth) {
-                clients.delete(socket);
-                socket.destroy();
-            } else {
-                console.log(`Packet too large: ${payloadLength}`);
-                disconnectClient(socket);
-            }
+            disconnectClient(socket);
             return;
         }
 
@@ -128,11 +130,11 @@ function processIncomingPackets(socket, client) {
             client.auth = true;
 
             if (hostSocket === null) {
-                hostSocket = socket;
+                hostSocket = ws;
                 console.log(`Client ${client.id} is HOST`);
-                socket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, client.id, Buffer.from([1])));
+                ws.send(buildServerPacket(TYPE_CONFIRM_CONNECTED, client.id, Buffer.from([1])));
             }
-            else socket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, client.id, Buffer.from([0])));
+            else ws.send(buildServerPacket(TYPE_CONFIRM_CONNECTED, client.id, Buffer.from([0])));
 
             console.log(`Client ${client.id} connected and authenticated`);
         }
@@ -144,15 +146,14 @@ function processIncomingPackets(socket, client) {
         if (payloadLength > 0) forwardPacket(buildServerPacket(TYPE_CLIENT_DATA, client.id, payload), addressee);
 
         buffer = buffer.slice(totalLength);
-
         client.lastSeen = Date.now();
     }
 
     client.buffer = buffer;
 }
 
-function disconnectClient(socket) {
-    const client = clients.get(socket);
+function disconnectClient(ws) {
+    const client = clients.get(ws);
     if (client == null) return;
 
     if (client.auth) {
@@ -160,49 +161,49 @@ function disconnectClient(socket) {
         forwardPacket(buildServerPacket(TYPE_CLIENT_DISCONNECTED, client.id), 0);
     }
 
-    clients.delete(socket);
+    clients.delete(ws);
 
     //Assign new host if disconnected
-    if (socket === hostSocket) {
+    if (ws === hostSocket) {
         hostSocket = null;
 
         let newHost = null;
-        for (const [socket, client] of clients.entries()) {
+        for (const [ws, client] of clients.entries()) {
             if (client.auth && (newHost === null || client.id < newHost.client.id)) {
-                newHost = {socket, client};
+                newHost = {ws, client};
             }
         }
 
         if (newHost != null) {
-            hostSocket = newHost.socket;
+            hostSocket = newHost.ws;
             console.log(`Client ${newHost.client.id} promoted to HOST`);
-            hostSocket.write(buildServerPacket(TYPE_CONFIRM_CONNECTED, newHost.client.id, Buffer.from([1])));
+            hostSocket.send(buildServerPacket(TYPE_CONFIRM_CONNECTED, newHost.client.id, Buffer.from([1])));
         }
     }
 
-    socket.destroy();
+    ws.close();
 }
 
 function forwardPacket(buffer, addressee) {
     if (addressee === 0) {
-        for (const [socket, client] of clients.entries()) {
-            if (client.auth && !socket.destroyed) {
-                socket.write(buffer);
+        for (const [ws, client] of clients.entries()) {
+            if (client.auth && ws.readyState === WebSocket.OPEN) {
+                ws.send(buffer);
             }
         }
         return;
     }
 
     if (addressee === 1) {
-        if (hostSocket != null && !hostSocket.destroyed) {
-            hostSocket.write(buffer);
+        if (hostSocket != null && ws.readyState === WebSocket.OPEN) {
+            hostSocket.send(buffer);
         }
         return;
     }
 
-    for (const [socket, client] of clients.entries()) {
+    for (const [ws, client] of clients.entries()) {
         if (client.auth && client.id === addressee) {
-            socket.write(buffer);
+            ws.send(buffer);
             return;
         }
     }
@@ -212,7 +213,7 @@ function forwardPacket(buffer, addressee) {
 
 function buildServerPacket(type, clientId, payload = null) {
     const payloadLength = (payload == null) ? 0 : payload.length;
-    const totalLength = MAGIC.length + 2 + 1 + 2 + 1 + payloadLength;
+    const totalLength = MAGIC.length + 1 + 2 + 1 + 2 + payloadLength;
 
     const buffer = Buffer.alloc(totalLength);
     let offset = 0;
@@ -245,8 +246,8 @@ function authenticatedClientCount() {
 
 function shutdown() {
     console.log("Server shutting down...");
-    for (const socket of clients.keys()) {
-        disconnectClient(socket);
+    for (const ws of clients.keys()) {
+        disconnectClient(ws);
     }
     server.close(() => {
         console.log("Server closed.");
