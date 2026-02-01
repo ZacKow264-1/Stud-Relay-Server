@@ -1,5 +1,4 @@
-const fs = require("fs");
-const https = require("https");
+const http = require("http");
 const WebSocket = require("ws");
 
 //Config
@@ -36,19 +35,15 @@ const TYPE_SERVER_FULL          = 4;
     PAYLOAD (variable, optional)
 */
 
-const httpsServer = https.createServer(
-    {
-        key: fs.readFileSync("./key.pem"),
-        cert: fs.readFileSync("./cert.pem")
-    }, 
+const httpServer = http.createServer( 
     (req, res) => {
     res.writeHead(200);
     res.end();
 });
 
-const wss = new WebSocket.Server({ server : httpsServer });
+const wss = new WebSocket.Server({ server : httpServer });
 
-httpsServer.listen(PORT, () => {
+httpServer.listen(PORT, () => {
     console.log(`WebSocket relay listening on port ${PORT}`);
 });
 
@@ -121,12 +116,12 @@ function processIncomingPackets(ws, client) {
         const totalLength = MAGIC_LEN + 2 + 2 + payloadLength;
 
         if (receivedMagic !== MAGIC) { //Check MAGIC
-            disconnectClient(socket);
+            disconnectClient(ws);
             return;
         }
 
         if (payloadLength > MAX_PACKET_SIZE) { //Check if packet is too large
-            disconnectClient(socket);
+            disconnectClient(ws);
             return;
         }
 
@@ -255,7 +250,7 @@ function shutdown() {
     for (const ws of clients.keys()) {
         disconnectClient(ws);
     }
-    httpsServer.close(() => {
+    httpServer.close(() => {
         console.log("Server closed.");
         process.exit(0);
     });
