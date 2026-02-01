@@ -44,7 +44,7 @@ const httpServer = http.createServer(
 const wss = new WebSocket.Server({ server : httpServer });
 
 httpServer.listen(PORT, () => {
-    console.log(`WebSocket relay listening on port ${PORT}`);
+    //console.log(`WebSocket relay listening on port ${PORT}`);
 });
 
 wss.on("connection", ws => {
