@@ -10,6 +10,7 @@ const MAX_UNAUTH_BUFFER = 2048;
 const MAX_CLIENTS = 10;
 const HEARTBEAT_TIMEOUT = 3000;
 const HEARTBEAT_CHECK_INTERVAL = 1500; //In ms
+const MAX_CLIENT_ID = 0xFFFF;
 let hostSocket = null;
 let nextClientId = 2;
 const clients = new Map(); // Socket -> {id, buffer}
@@ -127,8 +128,15 @@ function processIncomingPackets(ws, client) {
 
         //If packet has reached this point, it's valid
         if (!client.auth) {
-            client.id = nextClientId++;
+            client.id = nextClientId;
             client.auth = true;
+
+            //Update nextClientId to next-lowest available ID
+            if (nextClientId < MAX_CLIENT_ID) nextClientId++;
+            else {
+                const usedIds = collectUsedIds(clients);
+                nextClientId = findLowestAvailableId(usedIds);
+            }
 
             if (hostSocket === null) {
                 hostSocket = ws;
@@ -170,7 +178,7 @@ function disconnectClient(ws) {
 
         let newHost = null;
         for (const [ws, client] of clients.entries()) {
-            if (client.auth && (newHost === null || client.id < newHost.client.id)) {
+            if (client.auth && newHost === null) {
                 newHost = {ws, client};
             }
         }
@@ -243,6 +251,24 @@ function authenticatedClientCount() {
         if (client.auth) count++;
     }
     return count;
+}
+
+function collectUsedIds(clients) {
+    const used = new Set();
+    for (const client of clients.values()) {
+        if (client.id !== null) {
+            used.add(client.id);
+        }
+    }
+    return used;
+}
+
+function findLowestAvailableId(usedIds) {
+    for (let id = 1; id <= MAX_CLIENT_ID; id++) {
+        if (!usedIds.has(id)) {
+            return id;
+        }
+    }
 }
 
 function shutdown() {
