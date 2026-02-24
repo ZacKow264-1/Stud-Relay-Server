@@ -3,7 +3,7 @@ const WebSocket = require("ws");
 
 //Config
 const PORT = process.env.PORT || 10000;
-const MAGIC = "BRlCK";
+const MAGIC = "Br1C#";
 const MAGIC_LEN = MAGIC.length;
 const MAX_PACKET_SIZE = 1024;
 const MAX_UNAUTH_BUFFER = 2048;
